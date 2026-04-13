@@ -7,6 +7,9 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
   Loader2,
   Save,
   Trophy,
@@ -53,6 +56,7 @@ export default function ScoringPage() {
   const [isSubmittingAll, setIsSubmittingAll] = useState(false);
   const [hasLoadedDraft, setHasLoadedDraft] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string>("");
+  const [isParticipantNavOpen, setIsParticipantNavOpen] = useState(false);
 
   const totalPossibleScore = useMemo(() => {
     return criteria.reduce((sum, criterion) => {
@@ -67,6 +71,17 @@ export default function ScoringPage() {
       ) ?? null
     );
   }, [participants, selectedParticipantId]);
+
+  const selectedParticipantIndex = useMemo(() => {
+    return participants.findIndex(
+      (participant) => participant.id === selectedParticipantId,
+    );
+  }, [participants, selectedParticipantId]);
+
+  const hasPreviousParticipant = selectedParticipantIndex > 0;
+  const hasNextParticipant =
+    selectedParticipantIndex >= 0 &&
+    selectedParticipantIndex < participants.length - 1;
 
   const storageKey = useMemo(() => {
     return eventId ? `judge-scoring-draft:${eventId}` : "";
@@ -115,6 +130,29 @@ export default function ScoringPage() {
     invalid,
   };
 }, [participants, scores, criteria]);
+
+  function goToPreviousParticipant() {
+    if (!hasPreviousParticipant) return;
+
+    const previousParticipant = participants[selectedParticipantIndex - 1];
+    if (!previousParticipant) return;
+
+    setSelectedParticipantId(previousParticipant.id);
+  }
+
+  function goToNextParticipant() {
+    if (!hasNextParticipant) return;
+
+    const nextParticipant = participants[selectedParticipantIndex + 1];
+    if (!nextParticipant) return;
+
+    setSelectedParticipantId(nextParticipant.id);
+  }
+
+  function selectParticipant(participantId: string) {
+    setSelectedParticipantId(participantId);
+    setIsParticipantNavOpen(false);
+  }
 
   function getScoreValue(participantId: string, criterionId: string) {
     return scores[participantId]?.[criterionId] ?? "";
@@ -474,35 +512,53 @@ export default function ScoringPage() {
             <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl">
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
                 <div>
-                  <label
-                    htmlFor="participant-select"
-                    className="mb-2 block text-sm font-medium text-slate-300"
-                  >
-                    Contestant
-                  </label>
-                  <select
-                    id="participant-select"
-                    value={selectedParticipantId}
-                    onChange={(e) => setSelectedParticipantId(e.target.value)}
-                    className="h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-sm text-white outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                  >
-                    {participants.map((participant) => {
-                      const status = getParticipantStatus(participant.id);
-                      const statusLabel =
-                        status === "ready"
-                          ? "Ready"
-                          : status === "invalid"
-                          ? "Invalid"
-                          : "Incomplete";
+  <label className="mb-2 block text-sm font-medium text-slate-300">
+    Contestant
+  </label>
 
-                      return (
-                        <option key={participant.id} value={participant.id}>
-                          #{participant.number} - {participant.name} · {statusLabel}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
+  <div className="grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
+    <button
+      type="button"
+      onClick={goToPreviousParticipant}
+      disabled={!hasPreviousParticipant}
+      className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <ChevronLeft className="h-4 w-4" />
+      <span className="hidden sm:inline">Previous</span>
+    </button>
+
+    <button
+      type="button"
+      onClick={() => setIsParticipantNavOpen(true)}
+      className="flex h-11 w-full items-center justify-between rounded-xl border border-slate-700 bg-slate-950 px-4 text-left text-sm text-white outline-none transition hover:bg-slate-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+    >
+      <div className="min-w-0">
+        <p className="truncate font-medium">
+          {selectedParticipant
+            ? `#${selectedParticipant.number} - ${selectedParticipant.name}`
+            : "Select contestant"}
+        </p>
+        <p className="text-xs text-slate-500">
+          {selectedParticipantIndex >= 0
+            ? `Participant ${selectedParticipantIndex + 1} of ${participants.length}`
+            : "No contestant selected"}
+        </p>
+      </div>
+
+      <ChevronDown className="ml-3 h-4 w-4 shrink-0 text-slate-400" />
+    </button>
+
+    <button
+      type="button"
+      onClick={goToNextParticipant}
+      disabled={!hasNextParticipant}
+      className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <span className="hidden sm:inline">Next</span>
+      <ChevronRight className="h-4 w-4" />
+    </button>
+  </div>
+</div>
 
                 <button
                   type="button"
@@ -638,14 +694,128 @@ export default function ScoringPage() {
           </>
         )}
       </div>
+
+      {participants.length > 0 ? (
+        <div className="fixed bottom-24 right-6 z-40 flex flex-col gap-3">
+          <button
+            type="button"
+            onClick={goToPreviousParticipant}
+            disabled={!hasPreviousParticipant}
+            className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-white shadow-lg transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Previous participant"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsParticipantNavOpen(true)}
+            className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-blue-500/30 bg-blue-600 text-white shadow-lg transition hover:bg-blue-700"
+            aria-label="Open participant selector"
+          >
+            <span className="text-sm font-bold">
+              {selectedParticipant?.number ?? "-"}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={goToNextParticipant}
+            disabled={!hasNextParticipant}
+            className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-white shadow-lg transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Next participant"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
+      ) : null}
+
       <button
         type="button"
         onClick={() => setIsRankingModalOpen(true)}
-        className="fixed bottom-6 right-6 z-40 inline-flex h-14 items-center justify-center gap-2 rounded-full border border-blue-500/30 bg-blue-600 px-5 text-sm font-semibold text-white shadow-lg transition hover:bg-blue-700"
+        className="fixed bottom-6 right-6 z-40 inline-flex h-12 w-12 items-center justify-center gap-2 rounded-full border border-blue-500/30 bg-emerald-600 text-sm font-semibold text-white shadow-lg transition hover:bg-blue-700"
       >
         <BarChart3 className="h-4 w-4" />
-        Quick Ranking
       </button>
+
+      {isParticipantNavOpen ? (
+  <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 sm:items-center">
+    <div className="w-full rounded-t-3xl border border-slate-800 bg-slate-900 shadow-2xl sm:max-w-xl sm:rounded-3xl">
+      <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+        <div>
+          <h2 className="text-base font-semibold text-white">
+            Select Participant
+          </h2>
+          <p className="text-sm text-slate-400">
+            Jump quickly to any contestant
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setIsParticipantNavOpen(false)}
+          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-300 transition hover:bg-slate-800 hover:text-white"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="max-h-[70vh] overflow-y-auto p-4">
+        <div className="space-y-2">
+          {participants.map((participant, index) => {
+            const status = getParticipantStatus(participant.id);
+
+            const statusClassName =
+              status === "ready"
+                ? "text-emerald-300 border-emerald-900/40 bg-emerald-950/20"
+                : status === "invalid"
+                  ? "text-rose-300 border-rose-900/40 bg-rose-950/20"
+                  : "text-amber-300 border-amber-900/40 bg-amber-950/20";
+
+            const statusLabel =
+              status === "ready"
+                ? "Ready"
+                : status === "invalid"
+                  ? "Invalid"
+                  : "Incomplete";
+
+            const isActive = participant.id === selectedParticipantId;
+
+            return (
+              <button
+                key={participant.id}
+                type="button"
+                onClick={() => selectParticipant(participant.id)}
+                className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                  isActive
+                    ? "border-blue-500/50 bg-blue-600/10"
+                    : "border-slate-800 bg-slate-950/60 hover:bg-slate-800/80"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-white">
+                      #{participant.number} - {participant.name}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Participant {index + 1} of {participants.length}
+                    </p>
+                  </div>
+
+                  <span
+                    className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${statusClassName}`}
+                  >
+                    {statusLabel}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  </div>
+) : null}
 
       {isRankingModalOpen ? (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4">

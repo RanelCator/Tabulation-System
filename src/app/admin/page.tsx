@@ -9,6 +9,7 @@ import {
   LogOut,
   Medal,
   ShieldCheck,
+  Ticket,
   Users,
 } from "lucide-react";
 import { getSession } from "@/lib/session";
@@ -49,6 +50,12 @@ const adminModules = [
     description: "Review final scores, rankings, and generated results.",
     href: "/admin/rankings",
     icon: Medal,
+  },
+  {
+    title: "Roulette",
+    description: "Prepare recorded roulette sessions, manage participants, and run winner draws.",
+    href: "/admin/roulette",
+    icon: Ticket,
   },
 ];
 
