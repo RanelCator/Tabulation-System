@@ -1,8 +1,7 @@
-// src/app/admin/roulette/[id]/live/page.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Trophy, X } from "lucide-react";
+import { Loader2, Shuffle, Trophy, X } from "lucide-react";
 import { useParams } from "next/navigation";
 
 type WheelSegment = {
@@ -21,6 +20,7 @@ type SpinEvent = {
   winner: {
     participantId: string;
     participantName: string;
+    drawMode?: "random" | "predetermined";
   };
   wheelParticipants: Array<{
     id: string;
@@ -28,6 +28,27 @@ type SpinEvent = {
     orderNo: number;
   }>;
   createdAt: string;
+};
+
+type SpinResponse = {
+  success: boolean;
+  message?: string;
+  data?: {
+    result: {
+      id: string;
+      createdAt?: string;
+    };
+    winner: {
+      participantId: string;
+      participantName: string;
+      drawMode: "random" | "predetermined";
+    };
+    wheelParticipants: Array<{
+      id: string;
+      name: string;
+      orderNo: number;
+    }>;
+  };
 };
 
 function polarToCartesian(
@@ -121,11 +142,9 @@ export default function LivePage() {
   const [winnerName, setWinnerName] = useState("");
   const [winnerId, setWinnerId] = useState("");
   const [isAnimating, setIsAnimating] = useState(false);
+  const [isSpinning, setIsSpinning] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
-  const [connectionState, setConnectionState] = useState<
-    "connecting" | "connected" | "disconnected"
-  >("connecting");
 
   const rotationRef = useRef(0);
   const animatingRef = useRef(false);
@@ -193,17 +212,19 @@ export default function LivePage() {
       if (spinAudioRef.current) {
         spinAudioRef.current.currentTime = 0;
         void spinAudioRef.current.play().catch(() => {
-          // Ignore autoplay restrictions.
+          // ignore autoplay restriction
         });
       }
 
-      const baseRotation = rotationRef.current;
-      const normalized = ((baseRotation % 360) + 360) % 360;
-      const target = (360 - winnerSegment.mid) % 360;
-      const delta = (target - normalized + 360) % 360;
+    const baseRotation = rotationRef.current;
+    const normalized = ((baseRotation % 360) + 360) % 360;
 
-      const fullSpins = 360 * 6;
-      const finalRotation = baseRotation + fullSpins + delta;
+    const POINTER_ANGLE = 90;
+    const target = (POINTER_ANGLE - winnerSegment.mid + 360) % 360;
+    const delta = (target - normalized + 360) % 360;
+
+    const fullSpins = 360 * 6;
+    const finalRotation = baseRotation + fullSpins + delta;
 
       const durationMs = 4200;
       const startTime = performance.now();
@@ -237,81 +258,71 @@ export default function LivePage() {
     }
   }
 
-let globalEventSource: EventSource | null = null;
-let globalSessionId: string | null = null;
-const lastHandledResultIdRef = useRef<string | null>(null);
+  async function handleSpin() {
+    if (!id || isSpinning || animatingRef.current) return;
 
-useEffect(() => {
-  if (!id) return;
-
-  // 🔥 prevent duplicate across remounts
-  if (globalEventSource && globalSessionId === id) {
-    return;
-  }
-
-  if (globalEventSource) {
-    globalEventSource.close();
-    globalEventSource = null;
-  }
-
-  setConnectionState("connecting");
-
-  const eventSource = new EventSource(`/api/roulette/${id}/stream`);
-
-  globalEventSource = eventSource;
-  globalSessionId = id;
-
-  eventSource.onopen = () => {
-    setConnectionState("connected");
-  };
-
-  eventSource.addEventListener("roulette", async (event) => {
     try {
-      const data = JSON.parse((event as MessageEvent).data) as SpinEvent;
+      setIsSpinning(true);
 
-      if (data.type !== "spin_result") return;
+      const response = await fetch(`/api/roulette/${id}/spin`, {
+        method: "POST",
+      });
 
-      if (lastHandledResultIdRef.current === data.resultId) return;
+      const result = (await response.json()) as SpinResponse;
 
-      lastHandledResultIdRef.current = data.resultId;
+      if (!response.ok || !result.success || !result.data?.winner) {
+        throw new Error(result.message ?? "Failed to spin roulette.");
+      }
 
-      await handleSpinEvent(data);
+      const event: SpinEvent = {
+        type: "spin_result",
+        sessionId: id,
+        resultId: result.data.result.id,
+        winner: {
+          participantId: result.data.winner.participantId,
+          participantName: result.data.winner.participantName,
+          drawMode: result.data.winner.drawMode,
+        },
+        wheelParticipants: result.data.wheelParticipants,
+        createdAt: result.data.result.createdAt ?? new Date().toISOString(),
+      };
+
+      await handleSpinEvent(event);
     } catch (error) {
-      console.error("Failed to parse SSE:", error);
+      console.error(error);
+      alert(error instanceof Error ? error.message : "Failed to spin roulette.");
+    } finally {
+      setIsSpinning(false);
     }
-  });
-
-  eventSource.onerror = () => {
-    setConnectionState("connecting");
-  };
-
-  return () => {
-    // ⚠️ do NOT clear global here
-    // let reconnect handle it
-  };
-}, [id]);
+  }
 
   return (
-    <main className="flex min-h-screen items-center justify-center overflow-hidden bg-black text-white">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-black text-white">
+      <div className="absolute right-6 top-6 z-20">
+        <button
+          type="button"
+          onClick={() => void handleSpin()}
+          disabled={isSpinning || isAnimating}
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 text-sm font-semibold text-white shadow-lg transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isSpinning || isAnimating ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Spinning...
+            </>
+          ) : (
+            <>
+              <Shuffle className="h-4 w-4" />
+              Spin
+            </>
+          )}
+        </button>
+      </div>
+
       <div className="relative flex flex-col items-center">
         <div className="mb-6 text-center">
           <p className="text-sm uppercase tracking-[0.3em] text-slate-400">
             Live Roulette Display
-          </p>
-          <p
-            className={`mt-2 text-xs font-medium ${
-              connectionState === "connected"
-                ? "text-emerald-400"
-                : connectionState === "connecting"
-                  ? "text-amber-400"
-                  : "text-rose-400"
-            }`}
-          >
-            {connectionState === "connected"
-              ? "Connected"
-              : connectionState === "connecting"
-                ? "Connecting..."
-                : "Disconnected"}
           </p>
         </div>
 
@@ -367,7 +378,7 @@ useEffect(() => {
                     fontSize="28"
                     fontWeight="600"
                   >
-                    Waiting for first spin
+                    Ready to spin
                   </text>
                 </g>
               )}

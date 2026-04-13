@@ -7,7 +7,6 @@ import {
   rouletteSessions,
 } from "@/db/schema/roulette";
 import { pickRouletteWinner } from "@/lib/roulette/helpers";
-import { redis } from "@/lib/redis";
 
 type RouteContext = {
   params: Promise<{
@@ -15,24 +14,35 @@ type RouteContext = {
   }>;
 };
 
-type SpinResultEvent = {
-  type: "spin_result";
-  sessionId: string;
-  resultId: string;
-  winner: {
-    participantId: string;
-    participantName: string;
-    drawMode: "random" | "predetermined";
+type SpinResponse = {
+  success: boolean;
+  message: string;
+  data?: {
+    result: {
+      id: string;
+      sessionId: string;
+      participantId: string;
+      winnerNameSnapshot: string;
+      drawMode: "random" | "predetermined";
+      createdAt: Date | string;
+    };
+    winner: {
+      participantId: string;
+      participantName: string;
+      drawMode: "random" | "predetermined";
+    };
+    wheelParticipants: Array<{
+      id: string;
+      name: string;
+      orderNo: number;
+    }>;
   };
-  wheelParticipants: Array<{
-    id: string;
-    name: string;
-    orderNo: number;
-  }>;
-  createdAt: string;
 };
 
-export async function POST(_request: Request, context: RouteContext) {
+export async function POST(
+  _request: Request,
+  context: RouteContext,
+): Promise<NextResponse<SpinResponse>> {
   try {
     const { id: sessionId } = await context.params;
 
@@ -86,6 +96,16 @@ export async function POST(_request: Request, context: RouteContext) {
         orderNo: participant.orderNo,
       }));
 
+    if (wheelParticipants.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "No eligible participants left to spin.",
+        },
+        { status: 400 },
+      );
+    }
+
     const winner = pickRouletteWinner({
       participants: participants.map((participant) => ({
         id: participant.id,
@@ -124,38 +144,13 @@ export async function POST(_request: Request, context: RouteContext) {
         .where(eq(rouletteParticipants.id, winner.participantId));
     }
 
-    if (session.predeterminedWinnerId) {
-      await db
-        .update(rouletteSessions)
-        .set({
-          predeterminedWinnerId: null,
-          updatedAt: sql`now()`,
-        })
-        .where(eq(rouletteSessions.id, sessionId));
-    } else {
-      await db
-        .update(rouletteSessions)
-        .set({
-          updatedAt: sql`now()`,
-        })
-        .where(eq(rouletteSessions.id, sessionId));
-    }
-
-    const liveEvent: SpinResultEvent = {
-      type: "spin_result",
-      sessionId,
-      resultId: createdResult.id,
-      winner: {
-        participantId: winner.participantId,
-        participantName: winner.participantName,
-        drawMode: winner.drawMode,
-      },
-      wheelParticipants,
-      createdAt: new Date().toISOString(),
-    };
-
-    await redis.set(`roulette:${sessionId}:latest`, liveEvent);
-    await redis.incr(`roulette:${sessionId}:version`);
+    await db
+      .update(rouletteSessions)
+      .set({
+        predeterminedWinnerId: session.predeterminedWinnerId ? null : session.predeterminedWinnerId,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(rouletteSessions.id, sessionId));
 
     return NextResponse.json({
       success: true,
@@ -171,7 +166,7 @@ export async function POST(_request: Request, context: RouteContext) {
       },
     });
   } catch (error) {
-    console.error(error);
+    console.error("Failed to spin roulette:", error);
 
     return NextResponse.json(
       {

@@ -1,4 +1,3 @@
-// src/app/admin/roulette/[id]/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -11,8 +10,6 @@ import {
   MonitorPlay,
   RefreshCw,
   RotateCcw,
-  Shuffle,
-  Trophy,
   Users,
   XCircle,
 } from "lucide-react";
@@ -89,14 +86,9 @@ export default function RouletteDetailPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isAddingParticipants, setIsAddingParticipants] = useState(false);
-  const [isSpinning, setIsSpinning] = useState(false);
   const [isRestoringAll, setIsRestoringAll] = useState(false);
 
   const [bulkInput, setBulkInput] = useState("");
-  const [lastWinnerName, setLastWinnerName] = useState("");
-  const [lastWinnerMode, setLastWinnerMode] = useState<
-    "random" | "predetermined" | ""
-  >("");
 
   const activeParticipants = useMemo(
     () => participants.filter((participant) => !participant.isRemoved),
@@ -134,11 +126,11 @@ export default function RouletteDetailPage() {
       setIsRefreshing(false);
     }
   }
-  
-    useEffect(() => {
-        if (!sessionId) return;
-        void loadSession(sessionId);
-    }, [sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    void loadSession(sessionId);
+  }, [sessionId]);
 
   async function updateSession(payload: Partial<RouletteSession>) {
     if (!sessionId) return;
@@ -211,56 +203,6 @@ export default function RouletteDetailPage() {
       setIsAddingParticipants(false);
     }
   }
-
-  async function handleSpin() {
-  if (!sessionId || isSpinning) return;
-
-  try {
-    setIsSpinning(true);
-    setLastWinnerName("");
-    setLastWinnerMode("");
-
-    const response = await fetch(`/api/roulette/${sessionId}/spin`, {
-      method: "POST",
-    });
-
-    const result = (await response.json()) as {
-      success: boolean;
-      message?: string;
-      data?: {
-        result: {
-          id: string;
-        };
-        winner: {
-          participantId: string;
-          participantName: string;
-          drawMode: "random" | "predetermined";
-        };
-        wheelParticipants: Array<{
-          id: string;
-          name: string;
-          orderNo: number;
-        }>;
-      };
-    };
-
-    if (!response.ok || !result.success || !result.data?.winner) {
-      throw new Error(result.message ?? "Failed to spin roulette.");
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 1800));
-
-    setLastWinnerName(result.data.winner.participantName);
-    setLastWinnerMode(result.data.winner.drawMode);
-
-    await loadSession(sessionId, true);
-  } catch (error) {
-    console.error(error);
-    alert(error instanceof Error ? error.message : "Failed to spin roulette.");
-  } finally {
-    setIsSpinning(false);
-  }
-}
 
   async function handleRestoreAll() {
     if (!sessionId) return;
@@ -387,24 +329,35 @@ export default function RouletteDetailPage() {
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => void loadSession(sessionId, true)}
-              disabled={isRefreshing}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isRefreshing ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Refreshing...
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="h-4 w-4" />
-                  Refresh
-                </>
-              )}
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => void loadSession(sessionId, true)}
+                disabled={isRefreshing}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isRefreshing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Refreshing...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-4 w-4" />
+                    Refresh
+                  </>
+                )}
+              </button>
+
+              <Link
+                href={`/admin/roulette/${session.id}/live`}
+                target="_blank"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-blue-500/30 bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700"
+              >
+                <MonitorPlay className="h-4 w-4" />
+                Open Live Page
+              </Link>
+            </div>
           </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-4">
@@ -444,7 +397,7 @@ export default function RouletteDetailPage() {
               <div className="mb-4">
                 <h2 className="text-lg font-semibold text-white">Settings</h2>
                 <p className="mt-1 text-sm text-slate-400">
-                  Configure session behavior before or during the draw.
+                  Configure session behavior before opening the live page.
                 </p>
               </div>
 
@@ -534,7 +487,7 @@ export default function RouletteDetailPage() {
                   Bulk Add Participants
                 </h2>
                 <p className="mt-1 text-sm text-slate-400">
-                  One per line. Existing duplicates will be skipped.
+                  One participant per line.
                 </p>
               </div>
 
@@ -584,7 +537,7 @@ export default function RouletteDetailPage() {
                     Participants
                   </h2>
                   <p className="mt-1 text-sm text-slate-400">
-                    Active and removed participant records for this session.
+                    Manage eligible and removed participants.
                   </p>
                 </div>
 
@@ -660,106 +613,38 @@ export default function RouletteDetailPage() {
             <section className="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
               <div className="mb-4">
                 <h2 className="text-lg font-semibold text-white">
-                  Roulette Draw
+                  Live Page Access
                 </h2>
                 <p className="mt-1 text-sm text-slate-400">
-                  Spin the session and record the winner.
+                  Open the live page to run the roulette draw.
                 </p>
               </div>
 
               <div className="rounded-3xl border border-slate-800 bg-slate-950/60 p-6">
-                <div className="flex min-h-[220px] flex-col items-center justify-center rounded-3xl border border-dashed border-slate-800 bg-slate-900/60 text-center">
-                  {isSpinning ? (
-                    <>
-                      <Loader2 className="mb-4 h-10 w-10 animate-spin text-blue-400" />
-                      <p className="text-lg font-semibold text-white">
-                        Spinning roulette...
-                      </p>
-                      <p className="mt-2 text-sm text-slate-400">
-                        Selecting winner from eligible participants
-                      </p>
-                    </>
-                  ) : lastWinnerName ? (
-                    <>
-                      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 ring-1 ring-amber-500/20">
-                        <Trophy className="h-7 w-7 text-amber-300" />
-                      </div>
-                      <p className="text-sm uppercase tracking-[0.16em] text-amber-300">
-                        Winner
-                      </p>
-                      <p className="mt-2 text-2xl font-bold text-white">
-                        {lastWinnerName}
-                      </p>
-                      <p className="mt-2 text-xs text-slate-400 capitalize">
-                        Selected by {lastWinnerMode}
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <Shuffle className="mb-4 h-10 w-10 text-blue-400" />
-                      <p className="text-lg font-semibold text-white">
-                        Ready to spin
-                      </p>
-                      <p className="mt-2 max-w-xs text-sm text-slate-400">
-                        {session.status === "active"
-                          ? "Start the draw when you are ready."
-                          : "Set the session status to active before spinning."}
-                      </p>
-                    </>
-                  )}
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3">
+                    <p className="text-xs text-slate-500">Mode</p>
+                    <p className="mt-1 text-sm font-semibold text-white">
+                      {session.predeterminedWinnerId ? "Predetermined" : "Random"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3">
+                    <p className="text-xs text-slate-500">Remove Winner</p>
+                    <p className="mt-1 text-sm font-semibold text-white">
+                      {session.removeWinnerAfterDraw ? "Enabled" : "Disabled"}
+                    </p>
+                  </div>
+
+                  <Link
+                    href={`/admin/roulette/${session.id}/live`}
+                    target="_blank"
+                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-blue-500/30 bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700"
+                  >
+                    <MonitorPlay className="h-4 w-4" />
+                    Open Live Display
+                  </Link>
                 </div>
-
-<div className="mt-5 space-y-4">
-  <div className="grid gap-3 sm:grid-cols-2">
-    <Link
-      href={`/admin/roulette/${session.id}/live`}
-      className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-blue-500/30 bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700"
-    target="_blank"
-    >
-      <MonitorPlay className="h-4 w-4" />
-      Open Live Display
-    </Link>
-
-    <button
-      type="button"
-      onClick={() => void handleSpin()}
-      disabled={
-        isSpinning ||
-        session.status !== "active" ||
-        activeParticipants.length === 0
-      }
-      className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      {isSpinning ? (
-        <>
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Spinning...
-        </>
-      ) : (
-        <>
-          <Shuffle className="h-4 w-4" />
-          Spin Roulette
-        </>
-      )}
-    </button>
-  </div>
-
-  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3">
-      <p className="text-xs text-slate-500">Mode</p>
-      <p className="mt-1 text-sm font-semibold text-white">
-        {session.predeterminedWinnerId ? "Predetermined" : "Random"}
-      </p>
-    </div>
-
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3">
-      <p className="text-xs text-slate-500">Remove Winner</p>
-      <p className="mt-1 text-sm font-semibold text-white">
-        {session.removeWinnerAfterDraw ? "Enabled" : "Disabled"}
-      </p>
-    </div>
-  </div>
-</div>
               </div>
             </section>
 
@@ -769,7 +654,7 @@ export default function RouletteDetailPage() {
                   Winner History
                 </h2>
                 <p className="mt-1 text-sm text-slate-400">
-                  Recorded spin results for this roulette session.
+                  Recorded spin results for this session.
                 </p>
               </div>
 
