@@ -13,6 +13,7 @@ import {
   Users,
   XCircle,
 } from "lucide-react";
+import Swal from "sweetalert2";
 
 type RouletteSession = {
   id: string;
@@ -74,6 +75,32 @@ function StatusBadge({
   );
 }
 
+  const swalBase = {
+    background: "#0f172a",
+    color: "#e2e8f0",
+  };
+
+async function showError(title: string, text: string): Promise<void> {
+    await Swal.fire({
+      icon: "error",
+      title,
+      text,
+      confirmButtonColor: "#2563eb",
+      ...swalBase,
+    });
+  }
+  
+  async function showSuccess(title: string, text: string): Promise<void> {
+    await Swal.fire({
+      icon: "success",
+      title,
+      text,
+      timer: 1400,
+      showConfirmButton: false,
+      ...swalBase,
+    });
+  }
+
 export default function RouletteDetailPage() {
   const params = useParams<{ id: string }>();
   const sessionId = typeof params?.id === "string" ? params.id : "";
@@ -100,6 +127,8 @@ export default function RouletteDetailPage() {
     [participants],
   );
 
+
+
   async function loadSession(id: string, showRefreshing = false) {
     try {
       if (showRefreshing) {
@@ -120,7 +149,10 @@ export default function RouletteDetailPage() {
       setDrawResults(result.data.drawResults);
     } catch (error) {
       console.error(error);
-      alert(error instanceof Error ? error.message : "Failed to load session.");
+      await showError(
+          error instanceof Error ? error.message : "Failed to load session.", ""
+      );
+      //alert(error instanceof Error ? error.message : "");
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -158,7 +190,9 @@ export default function RouletteDetailPage() {
       await loadSession(sessionId, true);
     } catch (error) {
       console.error(error);
-      alert(error instanceof Error ? error.message : "Failed to save settings.");
+      await showError(
+          error instanceof Error ? error.message : "Failed to save settings.", ""
+      );
     } finally {
       setIsSavingSettings(false);
     }
@@ -191,14 +225,17 @@ export default function RouletteDetailPage() {
       };
 
       if (!response.ok || !result.success) {
-        throw new Error(result.message ?? "Failed to add participants.");
+        throw new Error( result.message ?? "Failed to add participants.");
       }
 
+      await showSuccess("Participants Added", "New participants have been added successfully.");
       setBulkInput("");
       await loadSession(sessionId, true);
     } catch (error) {
       console.error(error);
-      alert(error instanceof Error ? error.message : "Failed to add participants.");
+      await showError(
+          error instanceof Error ? error.message : "Failed to add participants.", ""
+      );
     } finally {
       setIsAddingParticipants(false);
     }
@@ -228,18 +265,37 @@ export default function RouletteDetailPage() {
       if (!response.ok || !result.success) {
         throw new Error(result.message ?? "Failed to restore participants.");
       }
-
+      await showSuccess("Participants Restored", "All removed participants have been restored.");
       await loadSession(sessionId, true);
     } catch (error) {
       console.error(error);
-      alert(error instanceof Error ? error.message : "Failed to restore participants.");
+      await showError(
+          error instanceof Error ? error.message : "Failed to restore participants.", ""
+      );
+      //alert(error instanceof Error ? error.message : "Failed to restore participants.");
     } finally {
       setIsRestoringAll(false);
     }
   }
 
+  
+
   async function handleRestoreParticipant(participantId: string) {
     if (!sessionId) return;
+
+    const confirmed = await Swal.fire({
+      icon: "question",
+      title: "Restore participant?",
+      text: `"${name}" will be eligible again for the draw.`,
+      showCancelButton: true,
+      confirmButtonText: "Restore",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#22c55e",
+      cancelButtonColor: "#475569",
+      ...swalBase,
+    });
+
+    if (!confirmed.isConfirmed) return;
 
     try {
       const response = await fetch(`/api/roulette/${sessionId}/restore`, {
@@ -258,15 +314,79 @@ export default function RouletteDetailPage() {
       };
 
       if (!response.ok || !result.success) {
-        throw new Error(result.message ?? "Failed to restore participant.");
+        await showError(
+          "Failed to restore participant",
+          result.message ?? "An error occurred while restoring the participant.",
+        );
+        //throw new Error(result.message ?? "Failed to restore participant.");
       }
-
+      await showSuccess("Participant Restored", "The participant has been restored successfully.");
       await loadSession(sessionId, true);
     } catch (error) {
       console.error(error);
-      alert(error instanceof Error ? error.message : "Failed to restore participant.");
+      await showError(
+        "Failed to restore participant",
+        error instanceof Error ? error.message : "Failed to restore participant.",
+      );
     }
   }
+
+async function handleDeleteParticipant(participantId: string) {
+  if (!sessionId) return;
+
+  const result = await Swal.fire({
+    title: "Delete Participant?",
+    text: "This action cannot be undone.",
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonColor: "#ef4444",
+    cancelButtonColor: "#64748b",
+    confirmButtonText: "Yes, delete it",
+    cancelButtonText: "Cancel",
+    reverseButtons: true,
+    ...swalBase,
+  });
+
+  if (!result.isConfirmed) return;
+
+  try {
+    const response = await fetch(
+      `/api/roulette/${sessionId}/participants/${participantId}`,
+      {
+        method: "DELETE",
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.message ?? "Delete failed");
+    }
+
+    await Swal.fire({
+      title: "Deleted!",
+      text: "Participant has been removed.",
+      icon: "success",
+      timer: 1500,
+      showConfirmButton: false,
+      ...swalBase,
+    });
+
+    await loadSession(sessionId, true);
+  } catch (error) {
+    console.error(error);
+
+    await Swal.fire({
+      title: "Error",
+      text:
+        error instanceof Error
+          ? error.message
+          : "Failed to delete participant.",
+      icon: "error",
+      ...swalBase,
+    });
+  }
+}
 
   if (isLoading) {
     return (
@@ -592,16 +712,27 @@ export default function RouletteDetailPage() {
                         </div>
                       </div>
 
-                      {participant.isRemoved ? (
+                      <div className="flex gap-2">
+                        {participant.isRemoved && (
+                          <button
+                            type="button"
+                            onClick={() => void handleRestoreParticipant(participant.id)}
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 text-sm font-medium text-white transition hover:bg-slate-800"
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                            Restore
+                          </button>
+                        )}
+
                         <button
                           type="button"
-                          onClick={() => void handleRestoreParticipant(participant.id)}
-                          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 text-sm font-medium text-white transition hover:bg-slate-800"
+                          onClick={() => void handleDeleteParticipant(participant.id)}
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 text-sm font-medium text-rose-300 transition hover:bg-rose-500/20"
                         >
-                          <RotateCcw className="h-4 w-4" />
-                          Restore
+                          <XCircle className="h-4 w-4" />
+                          Delete
                         </button>
-                      ) : null}
+                      </div>
                     </div>
                   ))}
                 </div>
