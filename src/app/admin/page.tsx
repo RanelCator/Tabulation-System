@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   LogOut,
   Medal,
+  MicVocal,
   ShieldCheck,
   Ticket,
   Users,
@@ -56,6 +57,12 @@ const adminModules = [
     description: "Prepare recorded roulette sessions, manage participants, and run winner draws.",
     href: "/admin/roulette",
     icon: Ticket,
+  },
+  {
+    title: "Karaoke",
+    description: "Prepare list of karaoke sessions, play songs, and manage karaoke queue.",
+    href: "/admin/karaoke",
+    icon: MicVocal,
   },
 ];
 

@@ -114,7 +114,7 @@ export async function POST(request: Request, context: RouteContext) {
       .returning();
 
     await db
-      .update(rouletteSessions)
+      .update(rouletteSessions) 
       .set({
         updatedAt: sql`now()`,
       })

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/session";
+
 import { getEventRankings } from "@/lib/rankings";
+import { getSession } from "@/lib/session";
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -13,13 +14,19 @@ export async function GET(request: Request) {
   const eventId = searchParams.get("eventId");
 
   if (!eventId) {
-    return NextResponse.json({ error: "eventId is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "eventId is required" },
+      { status: 400 },
+    );
   }
 
   const result = await getEventRankings(eventId);
 
   if (!result) {
-    return NextResponse.json({ error: "Event not found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Event not found" },
+      { status: 404 },
+    );
   }
 
   return NextResponse.json(result);

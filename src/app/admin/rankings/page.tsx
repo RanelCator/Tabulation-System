@@ -15,6 +15,15 @@ type JudgeItem = {
   displayName: string;
 };
 
+type ParticipantItem = {
+  id: string;
+  number: number;
+  name?: string;
+  coser?: string;
+  character?: string;
+  seriesTitle?: string;
+};
+
 type EventItem = {
   id: string;
   name: string;
@@ -79,16 +88,23 @@ type RankingsResponse = {
   };
   rankings?: RankingItem[];
   judges?: JudgeItem[];
+  participants?: ParticipantItem[];
   judgeRankings?: JudgeRankingGroup[];
   criteriaRankings?: CriteriaRankingGroup[];
 };
 
-type RankingView = "overall" | "judges" | "criteria";
+type RankingView =
+  | "overall"
+  | "judges"
+  | "criteria"
+  | "participants"
+  | "participantsBlank";
 
 export default function RankingsPage() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [rankings, setRankings] = useState<RankingItem[]>([]);
+  const [participants, setParticipants] = useState<ParticipantItem[]>([]);
   const [judgeRankings, setJudgeRankings] = useState<JudgeRankingGroup[]>([]);
   const [criteriaRankings, setCriteriaRankings] = useState<CriteriaRankingGroup[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -102,6 +118,7 @@ export default function RankingsPage() {
       const data = await res.json();
 
       setEvents(data.events ?? []);
+
       if (data.events?.length) {
         setSelectedEventId(data.events[0].id);
       }
@@ -119,7 +136,9 @@ export default function RankingsPage() {
       try {
         const res = await fetch(`/api/admin/rankings?eventId=${selectedEventId}`);
         const data = (await res.json()) as RankingsResponse;
+
         setJudges(data.judges ?? []);
+        setParticipants(data.participants ?? []);
         setRankings(data.rankings ?? []);
         setJudgeRankings(data.judgeRankings ?? []);
         setCriteriaRankings(data.criteriaRankings ?? []);
@@ -135,6 +154,7 @@ export default function RankingsPage() {
   const hasOverallRows = useMemo(() => rankings.length > 0, [rankings]);
   const hasJudgeRows = useMemo(() => judgeRankings.length > 0, [judgeRankings]);
   const hasCriteriaRows = useMemo(() => criteriaRankings.length > 0, [criteriaRankings]);
+  const hasParticipantRows = useMemo(() => participants.length > 0, [participants]);
 
   function sanitizeFileName(value: string) {
     return value
@@ -145,12 +165,21 @@ export default function RankingsPage() {
   }
 
   function escapeHtml(value: string) {
-    return value
+    return String(value ?? "")
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  function getParticipantInfo(participant: ParticipantItem) {
+    return {
+      number: participant.number ?? "",
+      coser: participant.coser ?? participant.name ?? "",
+      character: participant.character ?? "",
+      seriesTitle: participant.seriesTitle ?? "",
+    };
   }
 
   function downloadCsv(filename: string, rows: Array<Array<string | number>>) {
@@ -192,45 +221,81 @@ export default function RankingsPage() {
         <head>
           <title>${escapeHtml(title)}</title>
           <style>
+            @page {
+              size: A4;
+              margin: 12mm;
+            }
+
             * {
               box-sizing: border-box;
             }
 
             body {
               font-family: Arial, Helvetica, sans-serif;
-              padding: 24px;
+              padding: 0;
+              margin: 0;
               color: #111827;
+              background: #ffffff;
+            }
+
+            .page {
+              padding: 8px 4px;
             }
 
             h1 {
               margin: 0 0 16px;
               font-size: 22px;
+              color: #0f172a;
             }
 
             table {
               width: 100%;
               border-collapse: collapse;
+              table-layout: fixed;
             }
 
             th, td {
-              border: 1px solid #d1d5db;
+              border: 1px solid #94a3b8;
               padding: 8px 10px;
               text-align: left;
-              font-size: 14px;
+              font-size: 13px;
+              vertical-align: middle;
+              word-wrap: break-word;
             }
 
             th {
-              background: #f3f4f6;
+              background: #e2e8f0;
+              color: #0f172a;
+              font-weight: 700;
+              text-transform: uppercase;
+              letter-spacing: 0.03em;
+            }
+
+            tbody tr:nth-child(even) {
+              background: #f8fafc;
+            }
+
+            .text-center {
+              text-align: center;
             }
 
             .text-right {
               text-align: right;
             }
+
+            @media print {
+              body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+            }
           </style>
         </head>
         <body>
-          <h1>${escapeHtml(title)}</h1>
-          ${tableHtml}
+          <div class="page">
+            <h1>${escapeHtml(title)}</h1>
+            ${tableHtml}
+          </div>
         </body>
       </html>
     `);
@@ -273,6 +338,48 @@ export default function RankingsPage() {
 
     downloadCsv(
       `${sanitizeFileName(eventName || "event")}-overall-rankings.csv`,
+      rows,
+    );
+  }
+
+  function exportParticipantsCsv() {
+    const rows: Array<Array<string | number>> = [
+      ["Participant Number", "Coser", "Character", "Series Title"],
+      ...participants.map((participant) => {
+        const info = getParticipantInfo(participant);
+
+        return [
+          info.number,
+          info.coser,
+          info.character,
+          info.seriesTitle,
+        ];
+      }),
+    ];
+
+    downloadCsv(
+      `${sanitizeFileName(eventName || "event")}-participants.csv`,
+      rows,
+    );
+  }
+
+  function exportParticipantsBlankCsv() {
+    const rows: Array<Array<string | number>> = [
+      ["#", "Coser", "Character", "Series Title"],
+      ...participants.map((participant) => {
+        const info = getParticipantInfo(participant);
+
+        return [
+          "",
+          info.coser,
+          info.character,
+          info.seriesTitle,
+        ];
+      }),
+    ];
+
+    downloadCsv(
+      `${sanitizeFileName(eventName || "event")}-participants-list.csv`,
       rows,
     );
   }
@@ -320,263 +427,340 @@ export default function RankingsPage() {
     );
   }
 
-function printOverallTable() {
-  const rowsHtml = rankings
-    .map((item) => {
-      const rankClass =
-        item.rank === 1
-          ? "rank-cell rank-1"
-          : item.rank === 2
-            ? "rank-cell rank-2"
-            : item.rank === 3
-              ? "rank-cell rank-3"
-              : "rank-cell";
+  function printParticipantsTable() {
+    const rowsHtml = participants
+      .map((participant) => {
+        const info = getParticipantInfo(participant);
 
-      return `
-        <tr>
-          <td class="${rankClass}">${item.rank}</td>
-          <td class="col-number">${item.participantNumber}</td>
-          <td class="col-participant">${escapeHtml(item.participantName)}</td>
-          <td class="col-final text-right">${item.finalScore.toFixed(2)}</td>
-        </tr>
-      `;
-    })
-    .join("");
+        return `
+          <tr>
+            <td class="text-center">${escapeHtml(String(info.number))}</td>
+            <td>${escapeHtml(info.coser)}</td>
+            <td>${escapeHtml(info.character)}</td>
+            <td>${escapeHtml(info.seriesTitle)}</td>
+          </tr>
+        `;
+      })
+      .join("");
 
-  const signaturesHtml =
-    judges.length > 0
-      ? `
-        <div class="signatures">
-          ${judges
-            .map(
-              (judge) => `
-                <div class="signature-box">
-                  <div class="signature-line"></div>
-                  <div class="signature-name">${escapeHtml(judge.displayName)}</div>
-                  <div class="signature-label">Judge</div>
-                </div>
-              `,
-            )
-            .join("")}
-        </div>
-      `
-      : "";
+    const tableHtml = `
+      <table>
+        <colgroup>
+          <col style="width: 18%;" />
+          <col style="width: 28%;" />
+          <col style="width: 27%;" />
+          <col style="width: 27%;" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Participant Number</th>
+            <th>Coser</th>
+            <th>Character</th>
+            <th>Series Title</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    `;
 
-  const printWindow = window.open("", "_blank", "width=1200,height=800");
+    printTable(`${eventName} - Participants`, tableHtml);
+  }
 
-  if (!printWindow) return;
+  function printParticipantsBlankTable() {
+    const rowsHtml = participants
+      .map((participant) => {
+        const info = getParticipantInfo(participant);
 
-  printWindow.document.write(`
-    <html>
-      <head>
-        <title>${escapeHtml(`${eventName} - Overall Rankings`)}</title>
-        <style>
-          @page {
-            margin: 12mm;
-          }
+        return `
+          <tr>
+            <td></td>
+            <td>${escapeHtml(info.coser)}</td>
+            <td>${escapeHtml(info.character)}</td>
+            <td>${escapeHtml(info.seriesTitle)}</td>
+          </tr>
+        `;
+      })
+      .join("");
 
-          * {
-            box-sizing: border-box;
-          }
+    const tableHtml = `
+      <table>
+        <colgroup>
+          <col style="width: 10%;" />
+          <col style="width: 30%;" />
+          <col style="width: 30%;" />
+          <col style="width: 30%;" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Coser</th>
+            <th>Character</th>
+            <th>Series Title</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    `;
 
-          html,
-          body {
-            height: auto;
-          }
+    printTable(`${eventName} - Participants List`, tableHtml);
+  }
 
-          body {
-            margin: 0;
-            font-family: Arial, Helvetica, sans-serif;
-            color: #111827;
-            background: #ffffff;
-          }
+  function printOverallTable() {
+    const rowsHtml = rankings
+      .map((item) => {
+        const rankClass =
+          item.rank === 1
+            ? "rank-cell rank-1"
+            : item.rank === 2
+              ? "rank-cell rank-2"
+              : item.rank === 3
+                ? "rank-cell rank-3"
+                : "rank-cell";
 
-          .page {
-            padding: 8px 4px;
-          }
+        return `
+          <tr>
+            <td class="${rankClass}">${item.rank}</td>
+            <td class="col-number">${item.participantNumber}</td>
+            <td class="col-participant">${escapeHtml(item.participantName)}</td>
+            <td class="col-final text-right">${item.finalScore.toFixed(2)}</td>
+          </tr>
+        `;
+      })
+      .join("");
 
-          .report-header {
-            margin-bottom: 18px;
-          }
-
-          .report-title {
-            margin: 0;
-            font-size: 28px;
-            font-weight: 700;
-            color: #0f172a;
-            letter-spacing: -0.02em;
-          }
-
-          .report-subtitle {
-            margin-top: 6px;
-            font-size: 12px;
-            color: #475569;
-          }
-
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            table-layout: fixed;
-            margin-top: 14px;
-            border: 1.5px solid #94a3b8;
-          }
-
-          col.col-rank {
-            width: 14%;
-          }
-
-          col.col-no {
-            width: 14%;
-          }
-
-          col.col-participant {
-            width: 48%;
-          }
-
-          col.col-final {
-            width: 24%;
-          }
-
-          thead th {
-            background: #e2e8f0;
-            color: #0f172a;
-            font-size: 13px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.03em;
-            border: 1px solid #94a3b8;
-            padding: 10px 12px;
-            text-align: left;
-          }
-
-          tbody td {
-            border: 1px solid #cbd5e1;
-            padding: 11px 12px;
-            font-size: 14px;
-            vertical-align: middle;
-          }
-
-          tbody tr:nth-child(even) {
-            background: #f8fafc;
-          }
-
-          .text-right {
-            text-align: right;
-          }
-
-          .col-number {
-            text-align: center;
-          }
-
-          .col-final {
-            font-weight: 700;
-            text-align: right;
-          }
-
-          .rank-cell {
-            text-align: center;
-            font-weight: 700;
-          }
-
-          .rank-1 {
-            background: #fef3c7;
-            color: #92400e;
-            font-size: 16px;
-            font-weight: 800;
-          }
-
-          .rank-2 {
-            background: #e5e7eb;
-            color: #374151;
-            font-size: 15px;
-            font-weight: 800;
-          }
-
-          .rank-3 {
-            background: #fde68a;
-            color: #78350f;
-            font-size: 15px;
-            font-weight: 800;
-          }
-
-          .signatures {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(240px, 1fr));
-            gap: 52px 40px;
-            margin-top: 56px;
-          }
-
-          .signature-box {
-            padding-top: 20px;
-            text-align: center;
-          }
-
-          .signature-line {
-            width: 100%;
-            border-top: 1.5px solid #1f2937;
-            margin-bottom: 8px;
-          }
-
-          .signature-name {
-            font-size: 14px;
-            font-weight: 700;
-            color: #0f172a;
-          }
-
-          .signature-label {
-            margin-top: 4px;
-            font-size: 12px;
-            color: #64748b;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-          }
-
-          @media print {
-            body {
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="page">
-          <div class="report-header">
-            <h1 class="report-title">${escapeHtml(eventName)} - Overall Rankings</h1>
-            <div class="report-subtitle">Official Results Summary</div>
+    const signaturesHtml =
+      judges.length > 0
+        ? `
+          <div class="signatures">
+            ${judges
+              .map(
+                (judge) => `
+                  <div class="signature-box">
+                    <div class="signature-line"></div>
+                    <div class="signature-name">${escapeHtml(judge.displayName)}</div>
+                    <div class="signature-label">Judge</div>
+                  </div>
+                `,
+              )
+              .join("")}
           </div>
+        `
+        : "";
 
-          <table>
-            <colgroup>
-              <col class="col-rank" />
-              <col class="col-no" />
-              <col class="col-participant" />
-              <col class="col-final" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>No.</th>
-                <th>Participant</th>
-                <th>Final</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-            </tbody>
-          </table>
+    const printWindow = window.open("", "_blank", "width=1200,height=800");
 
-          ${signaturesHtml}
-        </div>
-      </body>
-    </html>
-  `);
+    if (!printWindow) return;
 
-  printWindow.document.close();
-  printWindow.focus();
-  printWindow.print();
-  printWindow.close();
-}
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>${escapeHtml(`${eventName} - Overall Rankings`)}</title>
+          <style>
+            @page {
+              size: A4;
+              margin: 12mm;
+            }
+
+            * {
+              box-sizing: border-box;
+            }
+
+            body {
+              margin: 0;
+              font-family: Arial, Helvetica, sans-serif;
+              color: #111827;
+              background: #ffffff;
+            }
+
+            .page {
+              padding: 8px 4px;
+            }
+
+            .report-header {
+              margin-bottom: 18px;
+            }
+
+            .report-title {
+              margin: 0;
+              font-size: 28px;
+              font-weight: 700;
+              color: #0f172a;
+            }
+
+            .report-subtitle {
+              margin-top: 6px;
+              font-size: 12px;
+              color: #475569;
+            }
+
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              table-layout: fixed;
+              margin-top: 14px;
+              border: 1.5px solid #94a3b8;
+            }
+
+            col.col-rank {
+              width: 14%;
+            }
+
+            col.col-no {
+              width: 14%;
+            }
+
+            col.col-participant {
+              width: 48%;
+            }
+
+            col.col-final {
+              width: 24%;
+            }
+
+            thead th {
+              background: #e2e8f0;
+              color: #0f172a;
+              font-size: 13px;
+              font-weight: 700;
+              text-transform: uppercase;
+              letter-spacing: 0.03em;
+              border: 1px solid #94a3b8;
+              padding: 10px 12px;
+              text-align: left;
+            }
+
+            tbody td {
+              border: 1px solid #cbd5e1;
+              padding: 11px 12px;
+              font-size: 14px;
+              vertical-align: middle;
+            }
+
+            tbody tr:nth-child(even) {
+              background: #f8fafc;
+            }
+
+            .text-right {
+              text-align: right;
+            }
+
+            .col-number {
+              text-align: center;
+            }
+
+            .col-final {
+              font-weight: 700;
+              text-align: right;
+            }
+
+            .rank-cell {
+              text-align: center;
+              font-weight: 700;
+            }
+
+            .rank-1 {
+              background: #fef3c7;
+              color: #92400e;
+              font-size: 16px;
+              font-weight: 800;
+            }
+
+            .rank-2 {
+              background: #e5e7eb;
+              color: #374151;
+              font-size: 15px;
+              font-weight: 800;
+            }
+
+            .rank-3 {
+              background: #fde68a;
+              color: #78350f;
+              font-size: 15px;
+              font-weight: 800;
+            }
+
+            .signatures {
+              display: grid;
+              grid-template-columns: repeat(2, minmax(240px, 1fr));
+              gap: 52px 40px;
+              margin-top: 56px;
+            }
+
+            .signature-box {
+              padding-top: 20px;
+              text-align: center;
+            }
+
+            .signature-line {
+              width: 100%;
+              border-top: 1.5px solid #1f2937;
+              margin-bottom: 8px;
+            }
+
+            .signature-name {
+              font-size: 14px;
+              font-weight: 700;
+              color: #0f172a;
+            }
+
+            .signature-label {
+              margin-top: 4px;
+              font-size: 12px;
+              color: #64748b;
+              text-transform: uppercase;
+              letter-spacing: 0.04em;
+            }
+
+            @media print {
+              body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="page">
+            <div class="report-header">
+              <h1 class="report-title">${escapeHtml(eventName)} - Overall Rankings</h1>
+              <div class="report-subtitle">Official Results Summary</div>
+            </div>
+
+            <table>
+              <colgroup>
+                <col class="col-rank" />
+                <col class="col-no" />
+                <col class="col-participant" />
+                <col class="col-final" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>No.</th>
+                  <th>Participant</th>
+                  <th>Final</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+            </table>
+
+            ${signaturesHtml}
+          </div>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
+  }
 
   function printJudgeTable(judge: JudgeRankingGroup) {
     const headerHtml = `
@@ -670,7 +854,7 @@ function printOverallTable() {
             <div>
               <h1 className="text-2xl font-bold">Rankings</h1>
               <p className="mt-1 text-sm text-slate-400">
-                Overall results, per judge totals, and per criterion rankings.
+                Overall results, per judge totals, per criterion rankings, and participants list.
               </p>
             </div>
           </div>
@@ -716,6 +900,46 @@ function printOverallTable() {
                     </button>
                   </>
                 )}
+
+                {activeView === "participants" && (
+                  <>
+                    <button
+                      onClick={exportParticipantsCsv}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800"
+                    >
+                      <Download className="h-4 w-4" />
+                      Export CSV
+                    </button>
+
+                    <button
+                      onClick={printParticipantsTable}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800"
+                    >
+                      <Printer className="h-4 w-4" />
+                      Print
+                    </button>
+                  </>
+                )}
+
+                {activeView === "participantsBlank" && (
+                  <>
+                    <button
+                      onClick={exportParticipantsBlankCsv}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800"
+                    >
+                      <Download className="h-4 w-4" />
+                      Export CSV
+                    </button>
+
+                    <button
+                      onClick={printParticipantsBlankTable}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800"
+                    >
+                      <Printer className="h-4 w-4" />
+                      Print
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -751,6 +975,28 @@ function printOverallTable() {
                 }`}
               >
                 Per Criterion
+              </button>
+
+              <button
+                onClick={() => setActiveView("participants")}
+                className={`rounded-xl px-4 py-2 text-sm transition ${
+                  activeView === "participants"
+                    ? "bg-blue-600 text-white"
+                    : "border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
+                }`}
+              >
+                Participants
+              </button>
+
+              <button
+                onClick={() => setActiveView("participantsBlank")}
+                className={`rounded-xl px-4 py-2 text-sm transition ${
+                  activeView === "participantsBlank"
+                    ? "bg-blue-600 text-white"
+                    : "border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
+                }`}
+              >
+                Participants List
               </button>
             </div>
           </>
@@ -978,6 +1224,80 @@ function printOverallTable() {
                 </div>
               ) : (
                 renderEmptyState("No per-criterion ranking data available.")
+              ))}
+
+            {activeView === "participants" &&
+              (hasParticipantRows ? (
+                <div className="overflow-x-auto rounded-2xl border border-slate-800">
+                  <table className="min-w-full">
+                    <thead>
+                      <tr className="bg-slate-900 text-sm text-slate-400">
+                        <th className="w-40 px-4 py-3 text-left">
+                          Participant Number
+                        </th>
+                        <th className="px-4 py-3 text-left">Coser</th>
+                        <th className="px-4 py-3 text-left">Character</th>
+                        <th className="px-4 py-3 text-left">Series Title</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {participants.map((participant) => {
+                        const info = getParticipantInfo(participant);
+
+                        return (
+                          <tr
+                            key={participant.id}
+                            className="border-t border-slate-800 text-sm hover:bg-slate-900/50"
+                          >
+                            <td className="px-4 py-3">{info.number}</td>
+                            <td className="px-4 py-3 font-medium">{info.coser}</td>
+                            <td className="px-4 py-3">{info.character}</td>
+                            <td className="px-4 py-3">{info.seriesTitle}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                renderEmptyState("No participants available.")
+              ))}
+
+            {activeView === "participantsBlank" &&
+              (hasParticipantRows ? (
+                <div className="overflow-x-auto rounded-2xl border border-slate-800">
+                  <table className="min-w-full">
+                    <thead>
+                      <tr className="bg-slate-900 text-sm text-slate-400">
+                        <th className="w-24 px-4 py-3 text-left">#</th>
+                        <th className="px-4 py-3 text-left">Coser</th>
+                        <th className="px-4 py-3 text-left">Character</th>
+                        <th className="px-4 py-3 text-left">Series Title</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {participants.map((participant) => {
+                        const info = getParticipantInfo(participant);
+
+                        return (
+                          <tr
+                            key={participant.id}
+                            className="border-t border-slate-800 text-sm hover:bg-slate-900/50"
+                          >
+                            <td className="px-4 py-3"></td>
+                            <td className="px-4 py-3 font-medium">{info.coser}</td>
+                            <td className="px-4 py-3">{info.character}</td>
+                            <td className="px-4 py-3">{info.seriesTitle}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                renderEmptyState("No participants available.")
               ))}
           </>
         )}

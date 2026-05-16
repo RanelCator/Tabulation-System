@@ -10,6 +10,15 @@ import {
 } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
+export type ParticipantItem = {
+  id: string;
+  number: number;
+  name: string;
+  coser: string;
+  character: string;
+  seriesTitle: string;
+};
+
 export type RankingResultItem = {
   participantId: string;
   participantNumber: number;
@@ -71,6 +80,7 @@ export type RankingResult = {
     id: string;
     displayName: string;
   }[];
+  participants: ParticipantItem[];
   judgeRankings: JudgeRankingGroup[];
   criteriaRankings: CriteriaRankingGroup[];
 };
@@ -103,7 +113,26 @@ function assignRanks<T>(
   }));
 }
 
-export async function getEventRankings(eventId: string): Promise<RankingResult | null> {
+function parseParticipantName(participant: {
+  id: string;
+  number: number;
+  name: string;
+}): ParticipantItem {
+  const parts = participant.name.split(" - ").map((item) => item.trim());
+
+  return {
+    id: participant.id,
+    number: participant.number,
+    name: participant.name,
+    coser: parts[0] || participant.name,
+    character: parts[1] || "",
+    seriesTitle: parts[2] || "",
+  };
+}
+
+export async function getEventRankings(
+  eventId: string,
+): Promise<RankingResult | null> {
   const [event] = await db.select().from(events).where(eq(events.id, eventId));
 
   if (!event) {
@@ -156,30 +185,19 @@ export async function getEventRankings(eventId: string): Promise<RankingResult |
     .from(deductions)
     .where(eq(deductions.eventId, eventId));
 
+  const participantsSorted = [...participantRows].sort(
+    (a, b) => a.number - b.number,
+  );
+
+  const participantsForResponse = participantsSorted.map(parseParticipantName);
+
   const criteriaSorted = [...criterionRows].sort((a, b) => {
     if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
     return a.name.localeCompare(b.name);
   });
 
-  const criterionMap = new Map(
-    criteriaSorted.map((criterion) => [
-      criterion.id,
-      {
-        id: criterion.id,
-        name: criterion.name,
-        sortOrder: criterion.sortOrder,
-      },
-    ]),
-  );
-
-  const scoresByParticipant = new Map<string, typeof scoreRows>();
-  for (const row of scoreRows) {
-    const existing = scoresByParticipant.get(row.participantId) ?? [];
-    existing.push(row);
-    scoresByParticipant.set(row.participantId, existing);
-  }
-
   const scoreMap = new Map<string, number>();
+
   for (const row of scoreRows) {
     scoreMap.set(
       `${row.judgeId}:${row.participantId}:${row.criterionId}`,
@@ -202,12 +220,22 @@ export async function getEventRankings(eventId: string): Promise<RankingResult |
     });
   }
 
-  const rankingsBase = participantRows.map((participant) => {
-    const participantScores = scoresByParticipant.get(participant.id) ?? [];
-    const rawScore = participantScores.reduce(
-      (sum, row) => sum + Number(row.score ?? 0),
+  const rankingsBase = participantsSorted.map((participant) => {
+    const judgeTotals = judgeRows.map((judge) => {
+      return criteriaSorted.reduce((sum, criterion) => {
+        const score =
+          scoreMap.get(`${judge.id}:${participant.id}:${criterion.id}`) ?? 0;
+
+        return sum + score;
+      }, 0);
+    });
+
+    const totalJudgeScore = judgeTotals.reduce(
+      (sum, judgeTotal) => sum + judgeTotal,
       0,
     );
+
+    const rawScore = judgeRows.length > 0 ? totalJudgeScore / judgeRows.length : 0;
 
     const deductionInfo = deductionMap.get(participant.id);
     const deduction = deductionInfo?.points ?? 0;
@@ -233,13 +261,15 @@ export async function getEventRankings(eventId: string): Promise<RankingResult |
   );
 
   const judgeRankings: JudgeRankingGroup[] = judgeRows.map((judge) => {
-    const baseRows = participantRows.map((participant) => {
-      const criteriaScores: JudgeCriteriaScore[] = criteriaSorted.map((criterion) => ({
-        criterionId: criterion.id,
-        criterionName: criterion.name,
-        score:
-          scoreMap.get(`${judge.id}:${participant.id}:${criterion.id}`) ?? 0,
-      }));
+    const baseRows = participantsSorted.map((participant) => {
+      const criteriaScores: JudgeCriteriaScore[] = criteriaSorted.map(
+        (criterion) => ({
+          criterionId: criterion.id,
+          criterionName: criterion.name,
+          score:
+            scoreMap.get(`${judge.id}:${participant.id}:${criterion.id}`) ?? 0,
+        }),
+      );
 
       const total = criteriaScores.reduce((sum, item) => sum + item.score, 0);
 
@@ -268,39 +298,46 @@ export async function getEventRankings(eventId: string): Promise<RankingResult |
     };
   });
 
-  const criteriaRankings: CriteriaRankingGroup[] = criteriaSorted.map((criterion) => {
-    const baseRows = participantRows.map((participant) => {
-      const scoresForCriterion = judgeRows.map((judge) => {
-        return scoreMap.get(`${judge.id}:${participant.id}:${criterion.id}`) ?? 0;
+  const criteriaRankings: CriteriaRankingGroup[] = criteriaSorted.map(
+    (criterion) => {
+      const baseRows = participantsSorted.map((participant) => {
+        const scoresForCriterion = judgeRows.map((judge) => {
+          return (
+            scoreMap.get(`${judge.id}:${participant.id}:${criterion.id}`) ?? 0
+          );
+        });
+
+        const total = scoresForCriterion.reduce((sum, value) => sum + value, 0);
+
+        const average =
+          scoresForCriterion.length > 0
+            ? total / scoresForCriterion.length
+            : 0;
+
+        return {
+          criterionId: criterion.id,
+          criterionName: criterion.name,
+          participantId: participant.id,
+          participantNumber: participant.number,
+          participantName: participant.name,
+          score: average,
+        };
       });
 
-      const total = scoresForCriterion.reduce((sum, value) => sum + value, 0);
-      const average =
-        scoresForCriterion.length > 0 ? total / scoresForCriterion.length : 0;
+      const rankedRows = assignRanks(
+        baseRows,
+        (item) => item.score,
+        undefined,
+        (item) => item.participantNumber,
+      );
 
       return {
         criterionId: criterion.id,
         criterionName: criterion.name,
-        participantId: participant.id,
-        participantNumber: participant.number,
-        participantName: participant.name,
-        score: average,
+        rows: rankedRows,
       };
-    });
-
-    const rankedRows = assignRanks(
-      baseRows,
-      (item) => item.score,
-      undefined,
-      (item) => item.participantNumber,
-    );
-
-    return {
-      criterionId: criterion.id,
-      criterionName: criterion.name,
-      rows: rankedRows,
-    };
-  });
+    },
+  );
 
   return {
     event: {
@@ -310,6 +347,7 @@ export async function getEventRankings(eventId: string): Promise<RankingResult |
     },
     rankings,
     judges: judgeRows,
+    participants: participantsForResponse,
     judgeRankings,
     criteriaRankings,
   };
