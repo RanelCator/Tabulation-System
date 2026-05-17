@@ -1,111 +1,113 @@
-import {
-  boolean,
-  integer,
-  numeric,
-  pgEnum,
-  pgTable,
-  text,
-  timestamp,
-  unique,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { NextResponse } from "next/server";
+import { db } from "@/db";
+import { participants } from "@/db/schema";
+import { getSession } from "@/lib/session";
+import { asc, eq } from "drizzle-orm";
 
-export const userRoleEnum = pgEnum("user_role", ["admin", "judge"]);
-export const eventStatusEnum = pgEnum("event_status", ["draft", "open", "closed"]);
+export async function GET() {
+  const session = await getSession();
 
-export const users = pgTable("users", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  role: userRoleEnum("role").notNull(),
-  displayName: text("display_name").notNull(),
-  passcodeHash: text("passcode_hash").notNull(),
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+  if (!session || session.role !== "admin") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-export const events = pgTable("events", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  name: text("name").notNull(),
-  status: eventStatusEnum("status").notNull().default("draft"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+  const rows = await db
+    .select()
+    .from(participants)
+    .orderBy(asc(participants.number));
 
-export const participants = pgTable("participants", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  eventId: uuid("event_id")
-    .notNull()
-    .references(() => events.id, { onDelete: "cascade" }),
-  number: integer("number").notNull(),
-  name: text("name").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+  return NextResponse.json({ participants: rows });
+}
 
-export const criteria = pgTable("criteria", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  eventId: uuid("event_id")
-    .notNull()
-    .references(() => events.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  maxScore: numeric("max_score", { precision: 10, scale: 2 }).notNull(),
-  sortOrder: integer("sort_order").notNull().default(0),
-});
+export async function POST(request: Request) {
+  const session = await getSession();
 
-export const judgeAssignments = pgTable(
-  "judge_assignments",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    judgeUserId: uuid("judge_user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    eventId: uuid("event_id")
-      .notNull()
-      .references(() => events.id, { onDelete: "cascade" }),
-  },
-  (table) => ({
-    judgeEventUnique: unique().on(table.judgeUserId, table.eventId),
-  }),
-);
+  if (!session || session.role !== "admin") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-export const scores = pgTable(
-  "scores",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    eventId: uuid("event_id")
-      .notNull()
-      .references(() => events.id, { onDelete: "cascade" }),
-    judgeUserId: uuid("judge_user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    participantId: uuid("participant_id")
-      .notNull()
-      .references(() => participants.id, { onDelete: "cascade" }),
-    criterionId: uuid("criterion_id")
-      .notNull()
-      .references(() => criteria.id, { onDelete: "cascade" }),
-    score: numeric("score", { precision: 10, scale: 2 }).notNull(),
-  },
-  (table) => ({
-    oneScorePerCriterion: unique().on(
-      table.judgeUserId,
-      table.participantId,
-      table.criterionId,
-    ),
-  }),
-);
+  const body = (await request.json()) as {
+    eventId?: string;
+    number?: number;
+    name?: string;
+  };
 
-export const deductions = pgTable(
-  "deductions",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    eventId: uuid("event_id")
-      .notNull()
-      .references(() => events.id, { onDelete: "cascade" }),
-    participantId: uuid("participant_id")
-      .notNull()
-      .references(() => participants.id, { onDelete: "cascade" }),
-    points: numeric("points", { precision: 10, scale: 2 }).notNull(),
-    reason: text("reason"),
-  },
-  (table) => ({
-    oneDeductionPerParticipantPerEvent: unique().on(table.eventId, table.participantId),
-  }),
-);
+  const eventId = body.eventId?.trim();
+  const number = Number(body.number);
+  const name = body.name?.trim();
+
+  if (!eventId || !Number.isInteger(number) || !name) {
+    return NextResponse.json(
+      { error: "eventId, number, and name are required" },
+      { status: 400 },
+    );
+  }
+
+  const [participant] = await db
+    .insert(participants)
+    .values({
+      eventId,
+      number,
+      name,
+    })
+    .returning();
+
+  return NextResponse.json({ success: true, participant });
+}
+
+export async function PUT(request: Request) {
+  const session = await getSession();
+
+  if (!session || session.role !== "admin") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = (await request.json()) as {
+    id?: string;
+    eventId?: string;
+    number?: number;
+    name?: string;
+  };
+
+  const id = body.id?.trim();
+  const eventId = body.eventId?.trim();
+  const number = Number(body.number);
+  const name = body.name?.trim();
+
+  if (!id || !eventId || !Number.isInteger(number) || !name) {
+    return NextResponse.json(
+      { error: "id, eventId, number, and name are required" },
+      { status: 400 },
+    );
+  }
+
+  await db
+    .update(participants)
+    .set({
+      eventId,
+      number,
+      name,
+    })
+    .where(eq(participants.id, id));
+
+  return NextResponse.json({ success: true });
+}
+
+export async function DELETE(request: Request) {
+  const session = await getSession();
+
+  if (!session || session.role !== "admin") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+
+  if (!id) {
+    return NextResponse.json({ error: "id is required" }, { status: 400 });
+  }
+
+  await db.delete(participants).where(eq(participants.id, id));
+
+  return NextResponse.json({ success: true });
+}

@@ -7,13 +7,16 @@ import {
   participants,
   criteria,
 } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 
 export async function GET() {
   const session = await getSession();
 
   if (!session || session.role !== "judge") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401 },
+    );
   }
 
   // Get assigned event
@@ -24,7 +27,10 @@ export async function GET() {
     .limit(1);
 
   if (!assignment.length) {
-    return NextResponse.json({ error: "No assigned event" }, { status: 404 });
+    return NextResponse.json(
+      { error: "No assigned event" },
+      { status: 404 },
+    );
   }
 
   const eventId = assignment[0].eventId;
@@ -37,12 +43,14 @@ export async function GET() {
   const eventParticipants = await db
     .select()
     .from(participants)
-    .where(eq(participants.eventId, eventId));
+    .where(eq(participants.eventId, eventId))
+    .orderBy(asc(participants.number));
 
   const eventCriteria = await db
     .select()
     .from(criteria)
-    .where(eq(criteria.eventId, eventId));
+    .where(eq(criteria.eventId, eventId))
+    .orderBy(asc(criteria.sortOrder));
 
   return NextResponse.json({
     event,
